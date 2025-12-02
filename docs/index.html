@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CopiumMeter</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>💊 CopiumMeter</h1>
+        <p class="subtitle">Detect coping, sarcasm, and sincerity in text</p>
+        
+        <div class="input-section">
+            <textarea id="inputText" placeholder="Enter your text here..."></textarea>
+            <button id="analyzeBtn" onclick="analyzeText()">Analyze</button>
+        </div>
+        
+        <div id="result" class="result hidden">
+            <div class="emoji" id="resultEmoji"></div>
+            <div class="label" id="resultLabel"></div>
+            <div class="meter">
+                <div class="meter-fill" id="meterFill"></div>
+            </div>
+            <div class="score" id="resultScore"></div>
+        </div>
+        
+        <div class="examples">
+            <p>Try these examples:</p>
+            <button class="example-btn" onclick="setExample('It\'s fine, I didn\'t want to win anyway')">Copium</button>
+            <button class="example-btn" onclick="setExample('Oh great, another meeting, just what I needed!')">Sarcasm</button>
+            <button class="example-btn" onclick="setExample('I really enjoyed that movie, it was fun!')">Sincere</button>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
