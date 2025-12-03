@@ -5,8 +5,10 @@
  */
 
 // Configuration
-const API_URL = "https://kurtesianplane-copium-meter.hf.space/api/predict";
+const API_BASE = "https://kurtesianplane-copium-meter.hf.space";
 const MODEL_ID = "kurtesianplane/copium-meter";
+
+const ONNX_MODEL_AVAILABLE = true;
 
 // Transformers.js pipeline
 let classifier = null;
@@ -135,6 +137,13 @@ async function checkApiStatus() {
 async function loadModelInBackground() {
     if (isModelLoading || isModelLoaded) return;
     
+    // Skip if ONNX model not yet available
+    if (!ONNX_MODEL_AVAILABLE) {
+        console.log('⚠️ ONNX model not yet exported. Using API only.');
+        console.log('Run tools/export_to_onnx.py and upload to HuggingFace to enable offline mode.');
+        return;
+    }
+    
     isModelLoading = true;
     
     try {
@@ -159,8 +168,9 @@ async function loadModelInBackground() {
         updateStatus('📥 Downloading model...', 'loading');
         
         // Load the classifier with progress tracking
+        // Using quantized: false since we only have model.onnx (not model_quantized.onnx)
         classifier = await pipeline('text-classification', MODEL_ID, {
-            quantized: true,
+            quantized: false,
             progress_callback: (progress) => {
                 if (progress.status === 'progress' && progress.total) {
                     const pct = Math.round((progress.loaded / progress.total) * 100);
@@ -302,18 +312,72 @@ async function classifyWithApi(text) {
     console.log('☁️ Using cloud API for inference...');
     
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: [text] })
-        });
+        // Try new Gradio API format first (call + join pattern)
+        let data;
         
-        if (!response.ok) throw new Error('API error');
+        try {
+            // New Gradio 4.x API format
+            const callResponse = await fetch(`${API_BASE}/call/classify_api`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: [text] })
+            });
+            
+            if (callResponse.ok) {
+                const callResult = await callResponse.json();
+                const eventId = callResult.event_id;
+                
+                // Get the result
+                const resultResponse = await fetch(`${API_BASE}/call/classify_api/${eventId}`);
+                const resultText = await resultResponse.text();
+                
+                // Parse SSE format
+                const lines = resultText.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const jsonData = JSON.parse(line.slice(6));
+                        if (jsonData && jsonData[0]) {
+                            data = { data: [jsonData[0]] };
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('New API format failed, trying legacy format...');
+        }
         
-        const data = await response.json();
+        // Fallback to legacy /api/predict format
+        if (!data) {
+            const response = await fetch(`${API_BASE}/api/predict`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: [text] })
+            });
+            
+            if (!response.ok) throw new Error('API error');
+            data = await response.json();
+        }
+        
+        if (!data) throw new Error('API error');
         
         if (data.data && data.data[0]) {
-            const resultText = data.data[0];
+            const result = data.data[0];
+            
+            // Check if result is already JSON (new API returns JSON directly)
+            if (typeof result === 'object' && result.prediction) {
+                return {
+                    prediction: result.prediction,
+                    confidence: result.confidence * 100,
+                    allResults: result.results.map(r => ({
+                        label: r.label,
+                        score: r.score * 100
+                    }))
+                };
+            }
+            
+            // Parse markdown format (legacy API)
+            const resultText = result;
             
             // Parse main result: "## 💀 Copium (85.3%)"
             const mainMatch = resultText.match(/## ([💀🙃😌😐]) (\w+) \((\d+\.?\d*)%\)/);

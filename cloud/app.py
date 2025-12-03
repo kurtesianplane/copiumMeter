@@ -104,19 +104,29 @@ with gr.Blocks(title="CopiumMeter 🧪") as demo:
         with gr.Column():
             output = gr.Markdown(label="Result")
     
+    # UI uses markdown output
     analyze_btn.click(fn=classify_text, inputs=text_input, outputs=output)
     text_input.submit(fn=classify_text, inputs=text_input, outputs=output)
+    
+    # Hidden API endpoint that returns JSON (for programmatic access)
+    api_input = gr.Textbox(visible=False)
+    api_output = gr.JSON(visible=False)
+    demo.load(fn=lambda: None, inputs=None, outputs=None)  # Dummy load
     
     gr.Markdown("""
     ---
     ### API Usage
     
-    You can also use this as an API:
+    You can use this as an API endpoint:
     ```
-    POST /api/predict
+    POST /call/classify_api
     {"data": ["your text here"]}
+    
+    # Returns event_id, then fetch result from:
+    GET /call/classify_api/{event_id}
     ```
     """)
 
-# Launch with API enabled
+# Add the API function explicitly
+demo.queue()
 demo.launch()
