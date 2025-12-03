@@ -314,91 +314,95 @@ async function classifyWithApi(text) {
     console.log('☁️ Using cloud API for inference...');
     
     try {
-        let data;
+        // Gradio 4+ uses /gradio_api prefix and SSE protocol
+        // First, initiate the call
+        const callResponse = await fetch(`${API_BASE}/gradio_api/call/classify_text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [text] })
+        });
         
-        // Try the JSON API endpoint first
-        try {
-            const response = await fetch(`${API_BASE}/api/classify`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: [text] })
+        if (!callResponse.ok) {
+            throw new Error(`API call failed: ${callResponse.status}`);
+        }
+        
+        const callResult = await callResponse.json();
+        const eventId = callResult.event_id;
+        
+        // Then fetch the result using SSE
+        const resultResponse = await fetch(`${API_BASE}/gradio_api/call/classify_text/${eventId}`);
+        const sseText = await resultResponse.text();
+        
+        // Parse SSE format - look for data: lines
+        let data = null;
+        const lines = sseText.split('\n');
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const parsed = JSON.parse(line.slice(6));
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        data = { data: parsed };
+                        break;
+                    }
+                } catch (e) {
+                    // Continue to next line
+                }
+            }
+        }
+        
+        if (!data || !data.data || !data.data[0]) {
+            throw new Error('Invalid API response');
+        }
+        
+        const result = data.data[0];
+        
+        // Check if result is already JSON (new API returns JSON directly)
+        if (typeof result === 'object' && result.prediction) {
+            return {
+                prediction: result.prediction,
+                confidence: result.confidence * 100,
+                allResults: result.results.map(r => ({
+                    label: r.label,
+                    score: r.score * 100
+                }))
+            };
+        }
+        
+        // Parse markdown format (current API returns markdown)
+        const resultText = result;
+        
+        // Parse main result: "## 💀 Copium (85.3%)"
+        const mainMatch = resultText.match(/## ([💀🙃😌😐]) (\w+) \((\d+\.?\d*)%\)/);
+        let prediction = 'neutral';
+        let confidence = 50;
+        
+        if (mainMatch) {
+            prediction = mainMatch[2].toLowerCase();
+            confidence = parseFloat(mainMatch[3]);
+        }
+        
+        // Parse all scores
+        const allResults = [];
+        const scoreMatches = resultText.matchAll(/- ([💀🙃😌😐]) \*\*(\w+)\*\*:.*?(\d+\.?\d*)%/g);
+        for (const match of scoreMatches) {
+            allResults.push({
+                label: match[2].toLowerCase(),
+                score: parseFloat(match[3])
             });
-            
-            if (response.ok) {
-                data = await response.json();
-                console.log('JSON API response:', data);
-            }
-        } catch (e) {
-            console.log('JSON API format failed, trying markdown format...');
         }
         
-        // Fallback to /api/predict (markdown format)
-        if (!data) {
-            const response = await fetch(`${API_BASE}/api/predict`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: [text] })
-            });
-            
-            if (!response.ok) throw new Error('API error');
-            data = await response.json();
+        // Fallback if parsing failed
+        if (allResults.length === 0) {
+            allResults.push(
+                { label: prediction, score: confidence },
+                ...Object.keys(labels).filter(l => l !== prediction).map(l => ({
+                    label: l,
+                    score: (100 - confidence) / 3
+                }))
+            );
         }
         
-        if (!data) throw new Error('API error');
-        
-        if (data.data && data.data[0]) {
-            const result = data.data[0];
-            
-            // Check if result is already JSON (new API returns JSON directly)
-            if (typeof result === 'object' && result.prediction) {
-                return {
-                    prediction: result.prediction,
-                    confidence: result.confidence * 100,
-                    allResults: result.results.map(r => ({
-                        label: r.label,
-                        score: r.score * 100
-                    }))
-                };
-            }
-            
-            // Parse markdown format (legacy API)
-            const resultText = result;
-            
-            // Parse main result: "## 💀 Copium (85.3%)"
-            const mainMatch = resultText.match(/## ([💀🙃😌😐]) (\w+) \((\d+\.?\d*)%\)/);
-            let prediction = 'neutral';
-            let confidence = 50;
-            
-            if (mainMatch) {
-                prediction = mainMatch[2].toLowerCase();
-                confidence = parseFloat(mainMatch[3]);
-            }
-            
-            // Parse all scores
-            const allResults = [];
-            const scoreMatches = resultText.matchAll(/- ([💀🙃😌😐]) \*\*(\w+)\*\*:.*?(\d+\.?\d*)%/g);
-            for (const match of scoreMatches) {
-                allResults.push({
-                    label: match[2].toLowerCase(),
-                    score: parseFloat(match[3])
-                });
-            }
-            
-            // Fallback if parsing failed
-            if (allResults.length === 0) {
-                allResults.push(
-                    { label: prediction, score: confidence },
-                    ...Object.keys(labels).filter(l => l !== prediction).map(l => ({
-                        label: l,
-                        score: (100 - confidence) / 3
-                    }))
-                );
-            }
-            
-            return { prediction, confidence, allResults };
-        }
-        
-        throw new Error('Invalid API response');
+        return { prediction, confidence, allResults };
         
     } catch (error) {
         console.error('API call failed:', error);
