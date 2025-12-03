@@ -1,6 +1,17 @@
-// Hugging Face Spaces API endpoint
-const API_URL = "https://kurtesianplane-copium-meter.hf.space/api/predict";
+/**
+ * CopiumMeter - Progressive Web App with Offline Inference
+ * Uses Transformers.js for on-device ML when offline
+ * Falls back to HuggingFace Spaces API when online
+ */
 
+// Configuration
+const API_URL = "https://kurtesianplane-copium-meter.hf.space/api/predict";
+const MODEL_ID = "kurtesianplane/copium-meter";
+
+// Transformers.js pipeline
+let classifier = null;
+
+// Label definitions
 const labels = {
     copium: { 
         name: 'Copium', 
@@ -35,11 +46,64 @@ const labelsByIndex = {
     3: 'neutral'
 };
 
-let isApiAvailable = true;
+// State
+let isOnline = navigator.onLine;
+let isModelLoaded = false;
+let isModelLoading = false;
 
-// Check API status on load
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    // Set up event listeners
+    document.getElementById('inputText').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            analyzeText();
+        }
+    });
+    
+    // Monitor online/offline status
+    window.addEventListener('online', handleOnlineStatusChange);
+    window.addEventListener('offline', handleOnlineStatusChange);
+    
+    // Initialize
+    await initialize();
+});
+
+async function initialize() {
+    updateStatus('🔄 Initializing...', 'loading');
+    
+    // Start loading model in background
+    loadModelInBackground();
+    
+    // Check online status
+    if (isOnline) {
+        await checkApiStatus();
+    } else {
+        updateStatus('📴 Offline - Loading local model...', 'warning');
+    }
+}
+
+function handleOnlineStatusChange() {
+    isOnline = navigator.onLine;
+    
+    if (isOnline) {
+        if (isModelLoaded) {
+            updateStatus('🟢 Online - Local model ready', 'success');
+        } else {
+            updateStatus('🟢 Online - Using Cloud API', 'success');
+        }
+    } else {
+        if (isModelLoaded) {
+            updateStatus('📴 Offline - Using local model', 'warning');
+        } else if (isModelLoading) {
+            updateStatus('📴 Offline - Loading model...', 'loading');
+        } else {
+            updateStatus('❌ Offline - No model cached', 'error');
+        }
+    }
+}
+
 async function checkApiStatus() {
-    const statusEl = document.getElementById('apiStatus');
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -51,16 +115,106 @@ async function checkApiStatus() {
         clearTimeout(timeoutId);
         
         if (response.ok) {
-            isApiAvailable = true;
-            statusEl.textContent = '🟢 Connected to Cloud API';
-            statusEl.style.color = '#10b981';
+            if (isModelLoaded) {
+                updateStatus('🟢 Online - Local model ready', 'success');
+            } else {
+                updateStatus('🟢 Online - Using Cloud API', 'success');
+            }
         } else {
             throw new Error('API not ready');
         }
     } catch (e) {
-        isApiAvailable = false;
-        statusEl.textContent = '🟡 Using Local Inference';
-        statusEl.style.color = '#f59e0b';
+        if (isModelLoaded) {
+            updateStatus('🟡 API unavailable - Using local model', 'warning');
+        } else {
+            updateStatus('🟡 Loading local model...', 'loading');
+        }
+    }
+}
+
+async function loadModelInBackground() {
+    if (isModelLoading || isModelLoaded) return;
+    
+    isModelLoading = true;
+    
+    try {
+        // Wait for Transformers.js to be available
+        let attempts = 0;
+        while (!window.Transformers && attempts < 50) {
+            await new Promise(r => setTimeout(r, 100));
+            attempts++;
+        }
+        
+        if (!window.Transformers) {
+            throw new Error('Transformers.js not loaded');
+        }
+        
+        const { pipeline, env } = window.Transformers;
+        
+        // Configure for browser
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+        
+        console.log('Loading model from HuggingFace...');
+        updateStatus('📥 Downloading model...', 'loading');
+        
+        // Load the classifier with progress tracking
+        classifier = await pipeline('text-classification', MODEL_ID, {
+            quantized: true,
+            progress_callback: (progress) => {
+                if (progress.status === 'progress' && progress.total) {
+                    const pct = Math.round((progress.loaded / progress.total) * 100);
+                    updateStatus(`📥 Downloading model... ${pct}%`, 'loading');
+                } else if (progress.status === 'done') {
+                    console.log('Download complete:', progress.file);
+                }
+            }
+        });
+        
+        isModelLoaded = true;
+        isModelLoading = false;
+        
+        console.log('✅ Model loaded successfully!');
+        
+        if (isOnline) {
+            updateStatus('🟢 Online - Local model ready', 'success');
+        } else {
+            updateStatus('📴 Offline - Local model ready', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('Failed to load model:', error);
+        isModelLoading = false;
+        
+        if (!isOnline) {
+            updateStatus('❌ Offline - Model not available', 'error');
+        } else {
+            updateStatus('🟢 Online - Using Cloud API', 'success');
+        }
+    }
+}
+
+function updateStatus(message, type = 'info') {
+    const statusEl = document.getElementById('apiStatus');
+    if (!statusEl) return;
+    
+    statusEl.textContent = message;
+    
+    switch (type) {
+        case 'success':
+            statusEl.style.color = '#10b981';
+            break;
+        case 'warning':
+            statusEl.style.color = '#f59e0b';
+            break;
+        case 'error':
+            statusEl.style.color = '#ef4444';
+            break;
+        case 'loading':
+            statusEl.style.color = '#6366f1';
+            break;
+        default:
+            statusEl.style.color = '#6b7280';
     }
 }
 
@@ -83,65 +237,26 @@ async function analyzeText() {
     btnLoading.classList.remove('hidden');
 
     try {
-        let prediction, confidence, allResults;
+        let result;
 
-        // Try API first
-        if (isApiAvailable) {
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: [text] })
-                });
-                
-                if (!response.ok) throw new Error('API error');
-                
-                const data = await response.json();
-                
-                if (data.data && data.data[0]) {
-                    const resultText = data.data[0];
-                    
-                    // Parse main result
-                    const mainMatch = resultText.match(/## ([💀🙃😌😐]) (\w+) \((\d+\.?\d*)%\)/);
-                    if (mainMatch) {
-                        prediction = mainMatch[2].toLowerCase();
-                        confidence = parseFloat(mainMatch[3]);
-                    }
-                    
-                    // Parse all scores
-                    allResults = [];
-                    const scoreMatches = resultText.matchAll(/- ([💀🙃😌😐]) \*\*(\w+)\*\*:.*?(\d+\.?\d*)%/g);
-                    for (const match of scoreMatches) {
-                        allResults.push({
-                            label: match[2].toLowerCase(),
-                            score: parseFloat(match[3])
-                        });
-                    }
-                    
-                    if (!prediction) throw new Error('Parse error');
-                }
-            } catch (apiError) {
-                console.log('API failed, using local:', apiError.message);
-                const result = mockInference(text);
-                prediction = labelsByIndex[result.label];
-                confidence = result.confidence;
-                allResults = result.allResults;
-                
-                document.getElementById('apiStatus').textContent = '🟡 Using Local Inference';
-            }
+        // Priority: Local model > Cloud API
+        if (isModelLoaded) {
+            // Use local model (works offline!)
+            result = await classifyWithLocalModel(text);
+        } else if (isOnline) {
+            // Use cloud API
+            result = await classifyWithApi(text);
         } else {
-            const result = mockInference(text);
-            prediction = labelsByIndex[result.label];
-            confidence = result.confidence;
-            allResults = result.allResults;
+            // Offline and no model
+            throw new Error('No internet connection and model not cached. Please connect to the internet once to download the model.');
         }
 
         // Display result with animation
-        await displayResult(prediction, confidence, allResults);
+        await displayResult(result.prediction, result.confidence, result.allResults);
         
     } catch (error) {
         console.error('Analysis error:', error);
-        showError();
+        showError(error.message);
     } finally {
         analyzeBtn.disabled = false;
         btnText.classList.remove('hidden');
@@ -149,73 +264,104 @@ async function analyzeText() {
     }
 }
 
-function mockInference(text) {
-    const lower = text.toLowerCase();
+async function classifyWithLocalModel(text) {
+    if (!classifier) {
+        throw new Error('Model not loaded');
+    }
     
-    const patterns = {
-        copium: [
-            /didn'?t (even )?(want|need|care)/i,
-            /whatever/i, /who cares/i, /doesn'?t matter/i,
-            /at least/i, /could be worse/i, /i'?m? over it/i,
-            /no big deal/i, /anyway/i, /not like i/i,
-            /fine with/i, /i guess/i, /never wanted/i
-        ],
-        sarcastic: [
-            /oh (great|wow|sure|really)/i, /yeah right/i,
-            /how (wonderful|surprising|original)/i,
-            /what a surprise/i, /totally/i, /obviously/i,
-            /shocking/i, /never would have guessed/i,
-            /like that'?s? (ever )?gonna happen/i
-        ],
-        sincere: [
-            /thank(s| you)/i, /appreciate/i, /grateful/i,
-            /helped? me/i, /love (this|that|it)/i,
-            /really (like|enjoy|love)/i, /glad/i, /happy/i,
-            /means a lot/i, /so kind/i
-        ],
-        neutral: [
-            /^(the|a|an) \w+/i, /is (at|on|in)/i,
-            /starts? at/i, /located/i, /according to/i,
-            /^\d+/i, /information/i
-        ]
+    console.log('🧠 Using local model for inference...');
+    const startTime = performance.now();
+    
+    // Run inference with top_k to get all scores
+    const results = await classifier(text, { top_k: 4 });
+    
+    const inferenceTime = Math.round(performance.now() - startTime);
+    console.log(`⚡ Inference took ${inferenceTime}ms`);
+    
+    // Parse results - Transformers.js returns array of {label, score}
+    const allResults = results.map(r => {
+        // Label format from model: "LABEL_0", "LABEL_1", etc.
+        const labelIndex = parseInt(r.label.replace('LABEL_', ''));
+        const labelKey = labelsByIndex[labelIndex] || 'neutral';
+        return {
+            label: labelKey,
+            score: r.score * 100
+        };
+    }).sort((a, b) => b.score - a.score);
+    
+    const topResult = allResults[0];
+    
+    return {
+        prediction: topResult.label,
+        confidence: topResult.score,
+        allResults: allResults
     };
+}
 
-    const scores = {};
-    for (const [label, patternList] of Object.entries(patterns)) {
-        scores[label] = patternList.filter(p => p.test(lower)).length;
+async function classifyWithApi(text) {
+    console.log('☁️ Using cloud API for inference...');
+    
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [text] })
+        });
+        
+        if (!response.ok) throw new Error('API error');
+        
+        const data = await response.json();
+        
+        if (data.data && data.data[0]) {
+            const resultText = data.data[0];
+            
+            // Parse main result: "## 💀 Copium (85.3%)"
+            const mainMatch = resultText.match(/## ([💀🙃😌😐]) (\w+) \((\d+\.?\d*)%\)/);
+            let prediction = 'neutral';
+            let confidence = 50;
+            
+            if (mainMatch) {
+                prediction = mainMatch[2].toLowerCase();
+                confidence = parseFloat(mainMatch[3]);
+            }
+            
+            // Parse all scores
+            const allResults = [];
+            const scoreMatches = resultText.matchAll(/- ([💀🙃😌😐]) \*\*(\w+)\*\*:.*?(\d+\.?\d*)%/g);
+            for (const match of scoreMatches) {
+                allResults.push({
+                    label: match[2].toLowerCase(),
+                    score: parseFloat(match[3])
+                });
+            }
+            
+            // Fallback if parsing failed
+            if (allResults.length === 0) {
+                allResults.push(
+                    { label: prediction, score: confidence },
+                    ...Object.keys(labels).filter(l => l !== prediction).map(l => ({
+                        label: l,
+                        score: (100 - confidence) / 3
+                    }))
+                );
+            }
+            
+            return { prediction, confidence, allResults };
+        }
+        
+        throw new Error('Invalid API response');
+        
+    } catch (error) {
+        console.error('API call failed:', error);
+        
+        // If local model available, use as fallback
+        if (isModelLoaded) {
+            updateStatus('🟡 API failed - Using local model', 'warning');
+            return classifyWithLocalModel(text);
+        }
+        
+        throw error;
     }
-    
-    // Boost scores based on context
-    if (scores.copium > 0 && (lower.includes('anyway') || lower.includes('fine'))) {
-        scores.copium += 1;
-    }
-    if (scores.sarcastic > 0 && (lower.includes('wow') || lower.includes('oh'))) {
-        scores.sarcastic += 1;
-    }
-
-    const maxScore = Math.max(...Object.values(scores));
-    let label = 3; // default neutral
-    
-    if (maxScore > 0) {
-        const entries = Object.entries(scores);
-        const winner = entries.reduce((a, b) => a[1] > b[1] ? a : b);
-        label = Object.keys(labelsByIndex).find(k => labelsByIndex[k] === winner[0]);
-    }
-    
-    const confidence = Math.min(45 + maxScore * 18 + Math.random() * 15, 95);
-    
-    // Generate all results
-    const total = Object.values(scores).reduce((a, b) => a + b, 0) || 1;
-    const allResults = Object.entries(scores).map(([name, score]) => ({
-        label: name,
-        score: Math.max(5, (score / total) * 100 + Math.random() * 10)
-    })).sort((a, b) => b.score - a.score);
-    
-    // Normalize to 100%
-    const sum = allResults.reduce((a, b) => a + b.score, 0);
-    allResults.forEach(r => r.score = (r.score / sum) * 100);
-
-    return { label: parseInt(label), confidence: Math.round(confidence), allResults };
 }
 
 async function displayResult(prediction, confidence, allResults) {
@@ -259,13 +405,13 @@ async function displayResult(prediction, confidence, allResults) {
     }
 }
 
-function showError() {
+function showError(message = 'Something went wrong. Please try again.') {
     const resultDiv = document.getElementById('result');
     resultDiv.classList.remove('hidden');
     document.getElementById('resultEmoji').textContent = '❌';
     document.getElementById('resultLabel').textContent = 'Error';
     document.getElementById('resultLabel').style.color = '#ef4444';
-    document.getElementById('resultDescription').textContent = 'Something went wrong. Please try again.';
+    document.getElementById('resultDescription').textContent = message;
     document.getElementById('resultScore').textContent = '';
     document.getElementById('meterFill').style.width = '0%';
     document.getElementById('allScores').innerHTML = '';
@@ -284,7 +430,7 @@ function setExample(text) {
     analyzeText();
 }
 
-// Add shake animation
+// Add shake animation dynamically
 const style = document.createElement('style');
 style.textContent = `
     @keyframes shake {
@@ -295,14 +441,14 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Allow Enter key to analyze (Shift+Enter for new line)
-document.addEventListener('DOMContentLoaded', () => {
-    checkApiStatus();
-    
-    document.getElementById('inputText').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            analyzeText();
+// Register Service Worker for offline support
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+        try {
+            const registration = await navigator.serviceWorker.register('./sw.js');
+            console.log('ServiceWorker registered:', registration.scope);
+        } catch (error) {
+            console.log('ServiceWorker registration failed:', error);
         }
     });
-});
+}
