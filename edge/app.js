@@ -314,42 +314,25 @@ async function classifyWithApi(text) {
     console.log('☁️ Using cloud API for inference...');
     
     try {
-        // Try new Gradio API format first (call + join pattern)
         let data;
         
+        // Try the JSON API endpoint first
         try {
-            // New Gradio 4.x API format
-            const callResponse = await fetch(`${API_BASE}/call/classify_api`, {
+            const response = await fetch(`${API_BASE}/api/classify`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ data: [text] })
             });
             
-            if (callResponse.ok) {
-                const callResult = await callResponse.json();
-                const eventId = callResult.event_id;
-                
-                // Get the result
-                const resultResponse = await fetch(`${API_BASE}/call/classify_api/${eventId}`);
-                const resultText = await resultResponse.text();
-                
-                // Parse SSE format
-                const lines = resultText.split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const jsonData = JSON.parse(line.slice(6));
-                        if (jsonData && jsonData[0]) {
-                            data = { data: [jsonData[0]] };
-                            break;
-                        }
-                    }
-                }
+            if (response.ok) {
+                data = await response.json();
+                console.log('JSON API response:', data);
             }
         } catch (e) {
-            console.log('New API format failed, trying legacy format...');
+            console.log('JSON API format failed, trying markdown format...');
         }
         
-        // Fallback to legacy /api/predict format
+        // Fallback to /api/predict (markdown format)
         if (!data) {
             const response = await fetch(`${API_BASE}/api/predict`, {
                 method: 'POST',

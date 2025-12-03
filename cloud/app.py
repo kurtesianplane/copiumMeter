@@ -108,12 +108,26 @@ with gr.Blocks(title="CopiumMeter 🧪") as demo:
     analyze_btn.click(fn=classify_text, inputs=text_input, outputs=output, api_name="predict")
     text_input.submit(fn=classify_text, inputs=text_input, outputs=output)
     
+    # Hidden JSON API endpoint for programmatic access
+    with gr.Row(visible=False):
+        api_text_input = gr.Textbox()
+        api_json_output = gr.JSON()
+        api_btn = gr.Button()
+        api_btn.click(fn=classify_api, inputs=api_text_input, outputs=api_json_output, api_name="classify")
+    
     gr.Markdown("""
     ---
     ### API Usage
     
+    **For Markdown output:**
     ```
     POST https://kurtesianplane-copium-meter.hf.space/api/predict
+    {"data": ["your text here"]}
+    ```
+    
+    **For JSON output:**
+    ```
+    POST https://kurtesianplane-copium-meter.hf.space/api/classify
     {"data": ["your text here"]}
     ```
     """)
