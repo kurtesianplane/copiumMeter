@@ -3,8 +3,8 @@
  * Enables offline functionality by caching app assets and model files
  */
 
-const CACHE_NAME = 'copiummeter-v1';
-const MODEL_CACHE_NAME = 'copiummeter-models-v1';
+const CACHE_NAME = 'copiummeter-v2';
+const MODEL_CACHE_NAME = 'copiummeter-models-v2';
 
 // App shell files to cache
 const APP_SHELL = [
