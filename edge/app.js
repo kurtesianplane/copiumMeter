@@ -168,10 +168,11 @@ async function loadModelInBackground() {
         updateStatus('📥 Downloading model...', 'loading');
         
         // Load the classifier with progress tracking
-        // Using dtype: 'fp32' to load model.onnx (not model_quantized.onnx)
-        // In Transformers.js 3.x, use dtype instead of quantized
+        // Specify model dtype to load correct ONNX file
         classifier = await pipeline('text-classification', MODEL_ID, {
-            dtype: 'fp32',  // Use full precision model (model.onnx)
+            dtype: {
+                model: 'fp32'  // Forces loading model.onnx instead of model_quantized.onnx
+            },
             progress_callback: (progress) => {
                 if (progress.status === 'progress' && progress.total) {
                     const pct = Math.round((progress.loaded / progress.total) * 100);
