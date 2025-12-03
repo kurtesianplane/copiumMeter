@@ -3,34 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CopiumMeter</title>
+    <title>CopiumMeter 🧪</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="background-glow"></div>
+    
     <div class="container">
-        <h1>💊 CopiumMeter</h1>
-        <p class="subtitle">Detect coping, sarcasm, and sincerity in text</p>
+        <header class="header">
+            <div class="logo">🧪</div>
+            <h1>CopiumMeter</h1>
+            <p class="tagline">AI-powered tone detection for internet text</p>
+        </header>
         
-        <div class="input-section">
-            <textarea id="inputText" placeholder="Enter your text here..."></textarea>
-            <button id="analyzeBtn" onclick="analyzeText()">Analyze</button>
-        </div>
-        
-        <div id="result" class="result hidden">
-            <div class="emoji" id="resultEmoji"></div>
-            <div class="label" id="resultLabel"></div>
-            <div class="meter">
-                <div class="meter-fill" id="meterFill"></div>
+        <div class="card main-card">
+            <div class="input-section">
+                <label for="inputText">Enter text to analyze</label>
+                <textarea id="inputText" placeholder="Type or paste any text here..."></textarea>
+                <button id="analyzeBtn" onclick="analyzeText()">
+                    <span class="btn-text">🔍 Analyze Text</span>
+                    <span class="btn-loading hidden">
+                        <span class="spinner"></span> Analyzing...
+                    </span>
+                </button>
             </div>
-            <div class="score" id="resultScore"></div>
+            
+            <div id="result" class="result hidden">
+                <div class="result-header">
+                    <div class="emoji-container">
+                        <div class="emoji-bg" id="emojiBg"></div>
+                        <div class="emoji" id="resultEmoji"></div>
+                    </div>
+                    <div class="result-text">
+                        <div class="label" id="resultLabel"></div>
+                        <div class="description" id="resultDescription"></div>
+                    </div>
+                </div>
+                
+                <div class="confidence-section">
+                    <div class="confidence-header">
+                        <span>Confidence</span>
+                        <span class="score" id="resultScore"></span>
+                    </div>
+                    <div class="meter">
+                        <div class="meter-fill" id="meterFill"></div>
+                    </div>
+                </div>
+                
+                <div class="all-scores" id="allScores"></div>
+            </div>
         </div>
         
-        <div class="examples">
-            <p>Try these examples:</p>
-            <button class="example-btn" onclick="setExample('It\'s fine, I didn\'t want to win anyway')">Copium</button>
-            <button class="example-btn" onclick="setExample('Oh great, another meeting, just what I needed!')">Sarcasm</button>
-            <button class="example-btn" onclick="setExample('I really enjoyed that movie, it was fun!')">Sincere</button>
+        <div class="card examples-card">
+            <h3>💡 Try these examples</h3>
+            <div class="examples-grid">
+                <button class="example-btn copium" onclick="setExample('I never wanted to win anyway')">
+                    <span class="example-emoji">💀</span>
+                    <span class="example-text">I never wanted to win anyway</span>
+                    <span class="example-label">Copium</span>
+                </button>
+                <button class="example-btn sarcastic" onclick="setExample('Wow another bug, how surprising')">
+                    <span class="example-emoji">🙃</span>
+                    <span class="example-text">Wow another bug, how surprising</span>
+                    <span class="example-label">Sarcastic</span>
+                </button>
+                <button class="example-btn sincere" onclick="setExample('Thanks for helping me out')">
+                    <span class="example-emoji">😌</span>
+                    <span class="example-text">Thanks for helping me out</span>
+                    <span class="example-label">Sincere</span>
+                </button>
+                <button class="example-btn neutral" onclick="setExample('The meeting starts at 3pm')">
+                    <span class="example-emoji">😐</span>
+                    <span class="example-text">The meeting starts at 3pm</span>
+                    <span class="example-label">Neutral</span>
+                </button>
+            </div>
         </div>
+        
+        <div class="card info-card">
+            <h3>📊 What does it detect?</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-emoji">💀</span>
+                    <div class="info-content">
+                        <strong>Copium</strong>
+                        <p>Denial, coping, rationalization</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-emoji">🙃</span>
+                    <div class="info-content">
+                        <strong>Sarcastic</strong>
+                        <p>Irony, mockery, exaggeration</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-emoji">😌</span>
+                    <div class="info-content">
+                        <strong>Sincere</strong>
+                        <p>Genuine, honest, appreciative</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-emoji">😐</span>
+                    <div class="info-content">
+                        <strong>Neutral</strong>
+                        <p>Factual, objective, informational</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="footer">
+            <p>Powered by <a href="https://huggingface.co/kurtesianplane/copium-meter" target="_blank">DistilBERT</a> • 
+            <a href="https://huggingface.co/spaces/kurtesianplane/copium-meter" target="_blank">Try on HuggingFace</a></p>
+            <p class="status" id="apiStatus"></p>
+        </footer>
     </div>
     
     <script src="app.js"></script>
